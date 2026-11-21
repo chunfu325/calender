@@ -37,7 +37,9 @@ textarea{width:100%;font-size:1rem;padding:8px;border:1px solid var(--bd);border
 .note b{white-space:nowrap}.note span{flex:1;white-space:pre-wrap;word-break:break-word}
 .note button{border:1px solid var(--red);color:var(--red);background:#fff;border-radius:6px;cursor:pointer}
 .small{font-size:.8rem;color:#888}
-@media(max-width:560px){.cell{min-height:64px}.cell .s{font-size:1.4rem}.cell .l{font-size:.8rem}.big{font-size:1.9rem}}
+.lsub{text-align:center;font-size:1.05rem;margin:0 0 8px;color:#6b4a22;font-weight:600}
+.cell .l{white-space:nowrap}
+@media(max-width:560px){.lsub{font-size:.95rem}.cell{min-height:64px}.cell .s{font-size:1.4rem}.cell .l{font-size:.72rem}.big{font-size:1.9rem}}
 </style>
 </head>
 <body>
@@ -52,6 +54,7 @@ textarea{width:100%;font-size:1rem;padding:8px;border:1px solid var(--bd);border
     <button class="go" id="ok">確定</button>
     <button id="today">返回今日</button>
   </div>
+  <div class="lsub" id="lsub"></div>
   <div class="grid" id="wk"></div>
   <div class="grid" id="cal"></div>
 
@@ -71,6 +74,7 @@ textarea{width:100%;font-size:1rem;padding:8px;border:1px solid var(--bd);border
 const SUPABASE_URL = 'https://cdfrpfjwohxwxbwdqqhx.supabase.co';   // 例:https://abcdxyz.supabase.co
 const SUPABASE_KEY = 'sb_publishable_LH-gElvlTanvfTRGe9QlZw_eVXj1N9f';   // anon public key(eyJ...)或 publishable key(sb_publishable_...)
 // ===================================================================================
+const SUPABASE_URL_ = SUPABASE_URL.trim().replace(/\/+$/,'').replace(/\/rest\/v1$/,'');
 const SB = !!(SUPABASE_URL && SUPABASE_KEY);
 const HDR = {apikey:SUPABASE_KEY,'Content-Type':'application/json'};
 if(SUPABASE_KEY.startsWith('eyJ'))HDR.Authorization='Bearer '+SUPABASE_KEY;
@@ -161,7 +165,7 @@ async function loadNotes(ym){
   if(SB){
     try{
       const [y,m]=ym.split('-').map(Number), last=new Date(y,m,0).getDate();
-      const r=await fetch(`${SUPABASE_URL}/rest/v1/notes?select=id,day,text,created_at&day=gte.${ym}-01&day=lte.${ym}-${p2(last)}&order=created_at`,{headers:HDR});
+      const r=await fetch(`${SUPABASE_URL_}/rest/v1/notes?select=id,day,text,created_at&day=gte.${ym}-01&day=lte.${ym}-${p2(last)}&order=created_at`,{headers:HDR});
       const rows=await r.json(), o={};
       if(!Array.isArray(rows))return {};
       rows.forEach(x=>{const dd=x.day.slice(8,10);(o[dd]=o[dd]||{})[x.id]={t:x.text,ts:Date.parse(x.created_at)}});
@@ -172,8 +176,8 @@ async function loadNotes(ym){
 }
 async function addNote(ym,dd,t){
   if(SB){
-    const r=await fetch(`${SUPABASE_URL}/rest/v1/notes`,{method:'POST',headers:{...HDR,Prefer:'return=minimal'},body:JSON.stringify({day:`${ym}-${dd}`,text:t})});
-    if(!r.ok)alert('儲存失敗,請檢查 Supabase 設定');
+    const r=await fetch(`${SUPABASE_URL_}/rest/v1/notes`,{method:'POST',headers:{...HDR,Prefer:'return=minimal'},body:JSON.stringify({day:`${ym}-${dd}`,text:t})});
+    if(!r.ok)alert('儲存失敗\nHTTP '+r.status+'\n'+(await r.text()).slice(0,300));
     return;
   }
   const rec={t,ts:Date.now()};
@@ -182,8 +186,8 @@ async function addNote(ym,dd,t){
 }
 async function delNote(ym,dd,id){
   if(SB){
-    const r=await fetch(`${SUPABASE_URL}/rest/v1/notes?id=eq.${encodeURIComponent(id)}`,{method:'DELETE',headers:HDR});
-    if(!r.ok)alert('刪除失敗,請檢查 Supabase 設定');
+    const r=await fetch(`${SUPABASE_URL_}/rest/v1/notes?id=eq.${encodeURIComponent(id)}`,{method:'DELETE',headers:HDR});
+    if(!r.ok)alert('刪除失敗\nHTTP '+r.status+'\n'+(await r.text()).slice(0,300));
     return;
   }
   const o=await loadNotes(ym);if(o[dd]){delete o[dd][id];if(!Object.keys(o[dd]).length)delete o[dd]}
@@ -207,6 +211,10 @@ async function refresh(){
 function drawCal(){
   $('ttl').textContent=`${vy}年${vm+1}月`;
   $('yr').value=vy;
+  const segs=[];const nn=new Date(vy,vm+1,0).getDate();
+  for(let d=1;d<=nn;d++){const L=lunar(vy,vm,d),last=segs[segs.length-1];
+    if(last&&last.n==L.mName)last.e=d;else segs.push({n:L.mName,s:d,e:d})}
+  $('lsub').textContent='農曆 '+segs.map(x=>`${x.n} ${x.s==x.e?x.s+'日':x.s+'–'+x.e+'日'}`).join(' ｜ ');
   const first=new Date(vy,vm,1).getDay(), n=new Date(vy,vm+1,0).getDate();
   const c=$('cal');c.innerHTML='';
   for(let i=0;i<first;i++){const e=document.createElement('div');e.className='cell empty';c.appendChild(e)}
@@ -228,17 +236,12 @@ function drawCal(){
 }
 function chips(arr,cls){return arr.map(x=>`<span class="tag ${cls||''}">${x}</span>`).join('')}
 function drawDetail(){
-  const I=info(vy,vm,sel), G=god(vy,vm,sel), yj=YJ[G.g];
+  const I=info(vy,vm,sel);
   const names=[...I.H.h,...I.H.f];
   $('detail').innerHTML=`
    <div class="big ${I.red?'red':''}">${vy}年${vm+1}月${sel}日 星期${WD[I.w]}</div>
    <div class="sub ${I.red?'red':''}">農曆 ${I.L.mName}${I.L.dName}</div>
-   <div style="margin-top:6px">${names.length?chips(names):'<span class="small">今日無國定假日/節日</span>'}${I.term?`<span class="tag" style="background:#fff0d0;color:#a06a00">節氣:${I.term}</span>`:''}</div>
-   <div style="margin-top:8px">日柱:${G.gz}日 ‧ 建除十二神:<b>${G.g}日</b></div>
-   <div style="margin-top:6px"><b class="yi">宜</b> ${yj[0].join('、')}</div>
-   <div style="margin-top:4px"><b class="ji">忌</b> ${yj[1].join('、')}</div>
-   <div class="small" style="margin-top:6px">宜忌依建除十二神推算,僅供參考。</div>`;
-  $('nd').textContent=`(${vm+1}/${sel})`;
+   <div style="margin-top:6px">${names.length?chips(names):'<span class="small">今日無國定假日/節日</span>'}${I.term?`<span class="tag" style="background:#fff0d0;color:#a06a00">節氣:${I.term}</span>`:''}</div>`;
 }
 function drawNotes(){
   const box=$('notes');box.innerHTML='';
