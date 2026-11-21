@@ -161,7 +161,7 @@ function holiday(y,m,d,L){
   if(fx[M+'-'+d]){h.push(fx[M+'-'+d]);}
   const t=termOf(y,m,d); if(t=='清明')h.push('清明節');
   const lk=(L.leap?'L':'')+L.m+'-'+L.d;
-  const lh={'1-1':'春節','1-2':'春節','1-3':'春節','1-4':'春節','1-5':'春節','5-5':'端午節','8-15':'中秋節'};
+  const lh={'1-1':'春節','1-2':'春節','1-3':'春節','5-5':'端午節','8-15':'中秋節'};
   if(lh[lk])h.push(lh[lk]);
   const nx=lunar(y,m,d+1);
   if(L.m==12&&!L.leap&&nx.m==1)h.push('除夕');
@@ -222,7 +222,7 @@ function makeup(y,m,d){
   for(let k=-8;k<=8;k++){
     const t=new Date(y,m,d+k), w=t.getDay();
     if(w!=0&&w!=6)continue;
-    const hs=officialOf(t).filter(n=>!['小年夜','除夕','春節'].includes(n)); if(!hs.length)continue; // 農曆年連假(小年夜~初五)固定,不另補假
+    const hs=officialOf(t); if(!hs.length)continue;
     const step=w==6?-1:1; let c=new Date(t.getFullYear(),t.getMonth(),t.getDate()+step), n=0;
     while(busy(c)&&n++<10)c=new Date(c.getFullYear(),c.getMonth(),c.getDate()+step);
     comp[dk(c)]=hs[0];
