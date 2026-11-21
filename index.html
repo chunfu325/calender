@@ -85,18 +85,33 @@ const key=(y,m,d)=>`${y}-${p2(m+1)}-${p2(d)}`;
 const $=id=>document.getElementById(id);
 
 // ---- 農曆 ----
-const lf=new Intl.DateTimeFormat('zh-TW-u-ca-chinese',{month:'long',day:'numeric'});
-const MN={正:1,一:1,二:2,三:3,四:4,五:5,六:6,七:7,八:8,九:9,十:10,十一:11,十二:12,冬:11,臘:12};
+const lfEn=new Intl.DateTimeFormat('en-u-ca-chinese',{month:'numeric',day:'numeric'});
+const lfZh=new Intl.DateTimeFormat('zh-TW-u-ca-chinese',{month:'long',day:'numeric'});
+const MN={正:1,一:1,二:2,三:3,四:4,五:5,六:6,七:7,八:8,九:9,十:10,十一:11,十二:12,冬:11,臘:12,腊:12};
 const MNAME=['','正','二','三','四','五','六','七','八','九','十','十一','十二'];
 function dayName(d){if(d<=10)return'初'+'一二三四五六七八九十'[d-1];if(d<20)return'十'+'一二三四五六七八九'[d-11];if(d==20)return'二十';if(d<30)return'廿'+'一二三四五六七八九'[d-21];return'三十'}
+function parts(fmt,dt){const o={};fmt.formatToParts(dt).forEach(p=>o[p.type]=p.value);return o}
+const lcache={};
 function lunar(y,m,d){
-  const o={};
-  lf.formatToParts(new Date(y,m,d,12)).forEach(p=>o[p.type]=p.value);
-  const leap=/閏|bis/i.test(o.month);
-  const s=o.month.replace(/閏|bis|月/gi,'');
-  const mo=/\d/.test(s)?parseInt(s):MN[s];
-  const da=parseInt(o.day);
-  return {m:mo,d:da,leap,mName:(leap?'閏':'')+MNAME[mo]+'月',dName:dayName(da)};
+  const k=y+'-'+m+'-'+d; if(lcache[k])return lcache[k];
+  const dt=new Date(y,m,d,12);
+  let mo=NaN,da=NaN,leap=false;
+  try{ // 英文格式最穩定:月 "10" 或 "5bis"、日 "15"
+    const o=parts(lfEn,dt);
+    leap=/bis|leap/i.test(o.month);
+    mo=parseInt(o.month);da=parseInt(o.day);
+  }catch(e){}
+  if(!(mo>=1&&mo<=12)||!(da>=1&&da<=30)){
+    try{
+      const o=parts(lfZh,dt);
+      leap=/閏|闰|bis/i.test(o.month);
+      const s=o.month.replace(/閏|闰|bis|月/gi,'');
+      mo=/\d/.test(s)?parseInt(s):MN[s];
+      da=parseInt(o.day);
+    }catch(e){}
+  }
+  const ok=mo>=1&&mo<=12&&da>=1&&da<=30;
+  return lcache[k]={m:mo,d:da,leap,mName:ok?(leap?'閏':'')+MNAME[mo]+'月':'',dName:ok?dayName(da):''};
 }
 
 // ---- 節氣 ----
