@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>農民曆日曆</title>
+<style>
+:root{--bg:#faf6ef;--card:#fff;--tx:#2b2b2b;--red:#d11a1a;--bd:#e4dccb;--ac:#8a5a2b}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font-family:"Noto Sans TC","Microsoft JhengHei",sans-serif}
+.wrap{max-width:900px;margin:0 auto;padding:10px}
+.bar{display:flex;flex-wrap:wrap;gap:6px;align-items:center;justify-content:center;margin-bottom:8px}
+.bar button,.bar select,.bar input{font-size:1rem;padding:6px 10px;border:1px solid var(--bd);border-radius:8px;background:#fff;cursor:pointer}
+.bar input{width:5.5em;cursor:text}
+.bar .go{background:var(--ac);color:#fff;border-color:var(--ac)}
+.title{font-size:1.6rem;font-weight:700;min-width:7em;text-align:center}
+.grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}
+.wd{text-align:center;font-weight:700;padding:4px 0}
+.cell{background:var(--card);border:1px solid var(--bd);border-radius:8px;min-height:78px;padding:3px;text-align:center;cursor:pointer;position:relative;overflow:hidden}
+.cell.sel{outline:3px solid var(--ac);background:#fff3dc}
+.cell.today{border:2px solid var(--ac)}
+.cell .s{font-size:1.9rem;font-weight:700;line-height:1.1}
+.cell .l{font-size:.95rem;color:#555}
+.cell .h{font-size:.72rem;line-height:1.1;color:var(--red)}
+.cell .dot{position:absolute;right:4px;top:4px;width:8px;height:8px;border-radius:50%;background:#2a7fff}
+.red{color:var(--red)!important}
+.empty{background:none;border:none;cursor:default}
+.panel{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:14px;margin-top:12px}
+.big{font-size:2.4rem;font-weight:700}
+.sub{font-size:1.5rem}
+.tag{display:inline-block;background:#fde7e7;color:var(--red);border-radius:6px;padding:2px 8px;margin:2px;font-weight:600}
+.yi{color:#1a7a3a}.ji{color:#555}
+h3{margin:14px 0 6px;font-size:1.1rem;border-left:5px solid var(--ac);padding-left:8px}
+textarea{width:100%;font-size:1rem;padding:8px;border:1px solid var(--bd);border-radius:8px;min-height:60px}
+.btn{font-size:1rem;padding:6px 14px;border:0;border-radius:8px;background:var(--ac);color:#fff;cursor:pointer;margin-top:6px}
+.note{display:flex;gap:8px;align-items:flex-start;padding:8px 0;border-bottom:1px dashed var(--bd)}
+.note b{white-space:nowrap}.note span{flex:1;white-space:pre-wrap;word-break:break-word}
+.note button{border:1px solid var(--red);color:var(--red);background:#fff;border-radius:6px;cursor:pointer}
+.small{font-size:.8rem;color:#888}
+@media(max-width:560px){.cell{min-height:64px}.cell .s{font-size:1.4rem}.cell .l{font-size:.8rem}.big{font-size:1.9rem}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="bar">
+    <button id="prev">◀ 上月</button>
+    <div class="title" id="ttl"></div>
+    <button id="next">下月 ▶</button>
+  </div>
+  <div class="bar">
+    <input id="yr" type="number" min="1901" max="2099" title="年">年
+    <button class="go" id="ok">確定</button>
+    <button id="today">返回今日</button>
+  </div>
+  <div class="grid" id="wk"></div>
+  <div class="grid" id="cal"></div>
+
+  <div class="panel" id="detail"></div>
+
+  <div class="panel">
+    <h3 style="margin-top:0">新增記事 <span id="nd"></span></h3>
+    <textarea id="txt" maxlength="500" placeholder="輸入當日記事…"></textarea>
+    <button class="btn" id="add">儲存記事</button>
+    <h3>本月記事</h3>
+    <div id="notes"></div>
+    <div class="small" id="mode"></div>
+  </div>
+</div>
+<script>
+// ===== 共同編輯設定:填入 Supabase 的 Project URL 與 anon/publishable key;留空則僅存於本機瀏覽器 =====
+const SUPABASE_URL = 'https://cdfrpfjwohxwxbwdqqhx.supabase.co';   // 例:https://abcdxyz.supabase.co
+const SUPABASE_KEY = 'sb_publishable_LH-gElvlTanvfTRGe9QlZw_eVXj1N9f';   // anon public key(eyJ...)或 publishable key(sb_publishable_...)
+// ===================================================================================
+const SB = !!(SUPABASE_URL && SUPABASE_KEY);
+const HDR = {apikey:SUPABASE_KEY,'Content-Type':'application/json'};
+if(SUPABASE_KEY.startsWith('eyJ'))HDR.Authorization='Bearer '+SUPABASE_KEY;
+
+const WD=['日','一','二','三','四','五','六'];
+const p2=n=>String(n).padStart(2,'0');
+const key=(y,m,d)=>`${y}-${p2(m+1)}-${p2(d)}`;
+const $=id=>document.getElementById(id);
+
+// ---- 農曆 ----
+const lf=new Intl.DateTimeFormat('zh-TW-u-ca-chinese',{month:'long',day:'numeric'});
+const MN={正:1,一:1,二:2,三:3,四:4,五:5,六:6,七:7,八:8,九:9,十:10,十一:11,十二:12,冬:11,臘:12};
+const MNAME=['','正','二','三','四','五','六','七','八','九','十','十一','十二'];
+function dayName(d){if(d<=10)return'初'+'一二三四五六七八九十'[d-1];if(d<20)return'十'+'一二三四五六七八九'[d-11];if(d==20)return'二十';if(d<30)return'廿'+'一二三四五六七八九'[d-21];return'三十'}
+function lunar(y,m,d){
+  const o={};
+  lf.formatToParts(new Date(y,m,d,12)).forEach(p=>o[p.type]=p.value);
+  const leap=/閏|bis/i.test(o.month);
+  const s=o.month.replace(/閏|bis|月/gi,'');
+  const mo=/\d/.test(s)?parseInt(s):MN[s];
+  const da=parseInt(o.day);
+  return {m:mo,d:da,leap,mName:(leap?'閏':'')+MNAME[mo]+'月',dName:dayName(da)};
+}
+
+// ---- 節氣 ----
+const TN=['小寒','大寒','立春','雨水','驚蟄','春分','清明','穀雨','立夏','小滿','芒種','夏至','小暑','大暑','立秋','處暑','白露','秋分','寒露','霜降','立冬','小雪','大雪','冬至'];
+const TC=[5.4055,20.12,3.87,18.73,5.63,20.646,4.81,20.1,5.52,21.04,5.678,21.37,7.108,22.83,7.5,23.13,7.646,23.042,8.318,23.438,7.438,22.36,7.18,21.94];
+const TM=[1,1,2,2,3,3,4,4,5,5,6,6,7,7,8,8,9,9,10,10,11,11,12,12];
+function termDay(i,y){
+  const Y=y%100,L=i<4?Math.floor((Y-1)/4):Math.floor(Y/4);
+  let d=Math.floor(Y*0.2422+TC[i])-L;
+  if(y==2026&&i==3)d--; if(y==2019&&i==0)d--;
+  return d;
+}
+function termOf(y,m,d){ // m: 0-based
+  for(const i of [m*2,m*2+1]) if(termDay(i,y)==d) return TN[i];
+  return '';
+}
+
+// ---- 建除十二神宜忌 ----
+const GODS=['建','除','滿','平','定','執','破','危','成','收','開','閉'];
+const YJ={
+建:[['出行','上任','見貴','求財'],['動土','開倉','嫁娶','安葬']],
+除:[['掃舍','沐浴','求醫','解除'],['出行','嫁娶','遠行']],
+滿:[['祈福','祭祀','開市','納財'],['安葬','服藥','栽種']],
+平:[['修飾垣牆','平治道塗','安機械'],['開市','嫁娶','動土']],
+定:[['嫁娶','訂盟','入學','簽約'],['出行','訴訟']],
+執:[['捕捉','祭祀','祈福'],['搬家','出行','開市']],
+破:[['破屋壞垣','求醫','療病'],['嫁娶','開市','動土','出行']],
+危:[['安床','祭祀','登高'],['登山','乘船','遠行']],
+成:[['嫁娶','開市','入宅','簽約'],['訴訟','安葬']],
+收:[['納財','收債','進貨','捕捉'],['開市','安葬','出行']],
+開:[['開市','出行','動土','入學'],['安葬','破土']],
+閉:[['築堤','補垣','安葬'],['開市','出行','嫁娶']]
+};
+const GZ_B='子丑寅卯辰巳午未申酉戌亥';
+function god(y,m,d){
+  const jdn=Math.floor(Date.UTC(y,m,d)/86400000)+2440588;
+  const idx=(jdn+49)%60, br=idx%12;
+  const M=m+1, jie=termDay(m*2,y);
+  const mb=d>=jie?M%12:(M-1)%12;
+  return {g:GODS[((br-mb)%12+12)%12], gz:'甲乙丙丁戊己庚辛壬癸'[idx%10]+GZ_B[br]};
+}
+
+// ---- 假日 ----
+function holiday(y,m,d,L){
+  const M=m+1, h=[], f=[];
+  const fx={'1-1':'元旦','2-28':'和平紀念日','4-4':'兒童節','5-1':'勞動節','10-10':'國慶日'};
+  if(fx[M+'-'+d]){h.push(fx[M+'-'+d]);}
+  const t=termOf(y,m,d); if(t=='清明')h.push('清明節');
+  const lk=(L.leap?'L':'')+L.m+'-'+L.d;
+  const lh={'1-1':'春節','1-2':'春節','1-3':'春節','5-5':'端午節','8-15':'中秋節'};
+  if(lh[lk])h.push(lh[lk]);
+  const nx=lunar(y,m,d+1);
+  if(L.m==12&&!L.leap&&nx.m==1)h.push('除夕');
+  const lf2={'1-15':'元宵節','7-7':'七夕','7-15':'中元節','9-9':'重陽節','12-8':'臘八'};
+  if(lf2[lk])f.push(lf2[lk]);
+  if(M==8&&d==8)f.push('父親節');
+  if(M==9&&d==28)f.push('教師節');
+  if(M==5&&new Date(y,m,d).getDay()==0&&d>7&&d<=14)f.push('母親節');
+  if(M==12&&d==25)f.push('行憲紀念日');
+  if(M==9&&d==3)f.push('軍人節');
+  return {h,f};
+}
+
+// ---- 記事儲存 ----(結構:{ 'DD': { id: {t, ts} } })
+async function loadNotes(ym){
+  if(SB){
+    try{
+      const [y,m]=ym.split('-').map(Number), last=new Date(y,m,0).getDate();
+      const r=await fetch(`${SUPABASE_URL}/rest/v1/notes?select=id,day,text,created_at&day=gte.${ym}-01&day=lte.${ym}-${p2(last)}&order=created_at`,{headers:HDR});
+      const rows=await r.json(), o={};
+      if(!Array.isArray(rows))return {};
+      rows.forEach(x=>{const dd=x.day.slice(8,10);(o[dd]=o[dd]||{})[x.id]={t:x.text,ts:Date.parse(x.created_at)}});
+      return o;
+    }catch(e){return {}}
+  }
+  try{return JSON.parse(localStorage.getItem('notes-'+ym)||'{}')}catch(e){return {}}
+}
+async function addNote(ym,dd,t){
+  if(SB){
+    const r=await fetch(`${SUPABASE_URL}/rest/v1/notes`,{method:'POST',headers:{...HDR,Prefer:'return=minimal'},body:JSON.stringify({day:`${ym}-${dd}`,text:t})});
+    if(!r.ok)alert('儲存失敗,請檢查 Supabase 設定');
+    return;
+  }
+  const rec={t,ts:Date.now()};
+  const o=await loadNotes(ym);(o[dd]=o[dd]||{})['n'+rec.ts]=rec;
+  try{localStorage.setItem('notes-'+ym,JSON.stringify(o))}catch(e){}
+}
+async function delNote(ym,dd,id){
+  if(SB){
+    const r=await fetch(`${SUPABASE_URL}/rest/v1/notes?id=eq.${encodeURIComponent(id)}`,{method:'DELETE',headers:HDR});
+    if(!r.ok)alert('刪除失敗,請檢查 Supabase 設定');
+    return;
+  }
+  const o=await loadNotes(ym);if(o[dd]){delete o[dd][id];if(!Object.keys(o[dd]).length)delete o[dd]}
+  try{localStorage.setItem('notes-'+ym,JSON.stringify(o))}catch(e){}
+}
+
+// ---- 畫面 ----
+const now=new Date();
+let vy=now.getFullYear(), vm=now.getMonth(), sel=now.getDate(), notes={};
+
+function info(y,m,d){
+  const L=lunar(y,m,d), H=holiday(y,m,d,L), w=new Date(y,m,d).getDay();
+  const red=w==0||w==6||H.h.length>0;
+  return {L,H,w,red,term:termOf(y,m,d)};
+}
+
+async function refresh(){
+  notes=await loadNotes(`${vy}-${p2(vm+1)}`);
+  drawCal();drawNotes();
+}
+function drawCal(){
+  $('ttl').textContent=`${vy}年${vm+1}月`;
+  $('yr').value=vy;
+  const first=new Date(vy,vm,1).getDay(), n=new Date(vy,vm+1,0).getDate();
+  const c=$('cal');c.innerHTML='';
+  for(let i=0;i<first;i++){const e=document.createElement('div');e.className='cell empty';c.appendChild(e)}
+  for(let d=1;d<=n;d++){
+    const I=info(vy,vm,d), cell=document.createElement('div');
+    cell.className='cell'+(d==sel?' sel':'')+(vy==now.getFullYear()&&vm==now.getMonth()&&d==now.getDate()?' today':'');
+    const s=document.createElement('div');s.className='s'+(I.red?' red':'');s.textContent=d;
+    const l=document.createElement('div');l.className='l'+(I.red?' red':'');
+    l.textContent=I.L.d==1?I.L.mName:I.L.dName;
+    const h=document.createElement('div');h.className='h';
+    h.textContent=[...I.H.h,...I.H.f,I.term].filter(Boolean)[0]||'';
+    if(h.textContent&&!I.H.h.length&&!I.H.f.length)h.style.color='#a06a00';
+    cell.append(s,l,h);
+    if(notes[p2(d)]){const dot=document.createElement('div');dot.className='dot';cell.appendChild(dot)}
+    cell.onclick=()=>{sel=d;drawCal()};
+    c.appendChild(cell);
+  }
+  drawDetail();
+}
+function chips(arr,cls){return arr.map(x=>`<span class="tag ${cls||''}">${x}</span>`).join('')}
+function drawDetail(){
+  const I=info(vy,vm,sel), G=god(vy,vm,sel), yj=YJ[G.g];
+  const names=[...I.H.h,...I.H.f];
+  $('detail').innerHTML=`
+   <div class="big ${I.red?'red':''}">${vy}年${vm+1}月${sel}日 星期${WD[I.w]}</div>
+   <div class="sub ${I.red?'red':''}">農曆 ${I.L.mName}${I.L.dName}</div>
+   <div style="margin-top:6px">${names.length?chips(names):'<span class="small">今日無國定假日/節日</span>'}${I.term?`<span class="tag" style="background:#fff0d0;color:#a06a00">節氣:${I.term}</span>`:''}</div>
+   <div style="margin-top:8px">日柱:${G.gz}日 ‧ 建除十二神:<b>${G.g}日</b></div>
+   <div style="margin-top:6px"><b class="yi">宜</b> ${yj[0].join('、')}</div>
+   <div style="margin-top:4px"><b class="ji">忌</b> ${yj[1].join('、')}</div>
+   <div class="small" style="margin-top:6px">宜忌依建除十二神推算,僅供參考。</div>`;
+  $('nd').textContent=`(${vm+1}/${sel})`;
+}
+function drawNotes(){
+  const box=$('notes');box.innerHTML='';
+  const days=Object.keys(notes).sort();
+  let cnt=0;
+  days.forEach(dd=>{
+    Object.entries(notes[dd]).sort((a,b)=>(a[1].ts||0)-(b[1].ts||0)).forEach(([id,r])=>{
+      cnt++;
+      const row=document.createElement('div');row.className='note';
+      const b=document.createElement('b');b.textContent=`${vm+1}/${parseInt(dd)}`;
+      const sp=document.createElement('span');sp.textContent=r.t;
+      const bt=document.createElement('button');bt.textContent='刪除';
+      bt.onclick=async()=>{if(confirm('確定刪除這則記事?')){await delNote(`${vy}-${p2(vm+1)}`,dd,id);refresh()}};
+      row.append(b,sp,bt);box.appendChild(row);
+    });
+  });
+  if(!cnt)box.innerHTML='<div class="small">本月尚無記事</div>';
+  $('mode').textContent=SB?'☁ 共同編輯模式:每 15 秒自動同步':'⚠ 目前記事僅存於本機瀏覽器(尚未設定共用資料庫)';
+}
+function go(y,m){vy=y;vm=m;const n=new Date(y,m+1,0).getDate();if(sel>n)sel=n;refresh()}
+$('prev').onclick=()=>vm==0?go(vy-1,11):go(vy,vm-1);
+$('next').onclick=()=>vm==11?go(vy+1,0):go(vy,vm+1);
+$('ok').onclick=()=>{const y=parseInt($('yr').value);if(y>=1901&&y<=2099)go(y,vm);else alert('請輸入 1901–2099 的年份')};
+$('yr').onkeydown=e=>{if(e.key=='Enter')$('ok').click()};
+$('today').onclick=()=>{sel=now.getDate();go(now.getFullYear(),now.getMonth())};
+$('add').onclick=async()=>{
+  const t=$('txt').value.trim();if(!t)return;
+  $('add').disabled=true;
+  await addNote(`${vy}-${p2(vm+1)}`,p2(sel),t);
+  $('txt').value='';$('add').disabled=false;refresh();
+};
+$('wk').innerHTML=WD.map((w,i)=>`<div class="wd ${i%6==0?'red':''}">${w}</div>`).join('');
+refresh();
+if(SB)setInterval(()=>{if(document.activeElement!==$('txt'))refresh()},15000);
+</script>
+</body>
+</html>
