@@ -157,20 +157,20 @@ function god(y,m,d){
 // ---- 假日 ----
 function holiday(y,m,d,L){
   const M=m+1, h=[], f=[];
-  const fx={'1-1':'元旦','2-28':'和平紀念日','4-4':'兒童節','5-1':'勞動節','10-10':'國慶日'};
+  const fx={'1-1':'元旦','2-28':'和平紀念日','4-4':'兒童節','5-1':'勞動節','9-28':'教師節','10-10':'國慶日','10-25':'光復節','12-25':'行憲紀念日'};
   if(fx[M+'-'+d]){h.push(fx[M+'-'+d]);}
   const t=termOf(y,m,d); if(t=='清明')h.push('清明節');
   const lk=(L.leap?'L':'')+L.m+'-'+L.d;
-  const lh={'1-1':'春節','1-2':'春節','1-3':'春節','5-5':'端午節','8-15':'中秋節'};
+  const lh={'1-1':'春節','1-2':'春節','1-3':'春節','1-4':'春節','1-5':'春節','5-5':'端午節','8-15':'中秋節'};
   if(lh[lk])h.push(lh[lk]);
   const nx=lunar(y,m,d+1);
   if(L.m==12&&!L.leap&&nx.m==1)h.push('除夕');
+  const n2=lunar(y,m,d+2);
+  if(L.m==12&&!L.leap&&nx.m==12&&n2.m==1)h.push('小年夜');
   const lf2={'1-15':'元宵節','7-7':'七夕','7-15':'中元節','9-9':'重陽節','12-8':'臘八'};
   if(lf2[lk])f.push(lf2[lk]);
   if(M==8&&d==8)f.push('父親節');
-  if(M==9&&d==28)f.push('教師節');
   if(M==5&&new Date(y,m,d).getDay()==0&&d>7&&d<=14)f.push('母親節');
-  if(M==12&&d==25)f.push('行憲紀念日');
   if(M==9&&d==3)f.push('軍人節');
   return {h,f};
 }
@@ -213,8 +213,25 @@ async function delNote(ym,dd,id){
 const now=new Date();
 let vy=now.getFullYear(), vm=now.getMonth(), sel=now.getDate(), notes={};
 
+// ---- 補假:節日遇週六→前一個上班日補假;遇週日→後一個上班日補假 ----
+const officialOf=dt=>{const y=dt.getFullYear(),m=dt.getMonth(),d=dt.getDate();return holiday(y,m,d,lunar(y,m,d)).h};
+const dk=dt=>dt.getFullYear()*10000+dt.getMonth()*100+dt.getDate();
+function makeup(y,m,d){
+  const comp={}, wk=dt=>dt.getDay()==0||dt.getDay()==6;
+  const busy=dt=>wk(dt)||officialOf(dt).length||comp[dk(dt)];
+  for(let k=-8;k<=8;k++){
+    const t=new Date(y,m,d+k), w=t.getDay();
+    if(w!=0&&w!=6)continue;
+    const hs=officialOf(t).filter(n=>!['小年夜','除夕','春節'].includes(n)); if(!hs.length)continue; // 農曆年連假(小年夜~初五)固定,不另補假
+    const step=w==6?-1:1; let c=new Date(t.getFullYear(),t.getMonth(),t.getDate()+step), n=0;
+    while(busy(c)&&n++<10)c=new Date(c.getFullYear(),c.getMonth(),c.getDate()+step);
+    comp[dk(c)]=hs[0];
+  }
+  return comp[dk(new Date(y,m,d))]||'';
+}
 function info(y,m,d){
   const L=lunar(y,m,d), H=holiday(y,m,d,L), w=new Date(y,m,d).getDay();
+  if(!H.h.length&&w!=0&&w!=6){const c=makeup(y,m,d);if(c)H.h.push(c+'補假')}
   const red=w==0||w==6||H.h.length>0;
   return {L,H,w,red,term:termOf(y,m,d)};
 }
@@ -241,6 +258,7 @@ function drawCal(){
     l.textContent=I.L.d==1?I.L.mName:I.L.dName;
     const h=document.createElement('div');h.className='h';
     h.textContent=[...I.H.h,...I.H.f,I.term].filter(Boolean)[0]||'';
+    if(h.textContent.endsWith('補假'))h.textContent='補假';
     if(h.textContent&&!I.H.h.length&&!I.H.f.length)h.style.color='#a06a00';
     cell.append(s,l,h);
     if(notes[p2(d)]){const dot=document.createElement('div');dot.className='dot';cell.appendChild(dot)}
